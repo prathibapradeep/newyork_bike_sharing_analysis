@@ -1,0 +1,332 @@
+---
+title: "Communicating Data"
+author: "Prathiba"
+date: "30/08/2021"
+output: html_document
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+The business question says, "What is the pattern of bike hires over time
+(e.g. within a year, month, week, or day)?"
+
+Do we need to display the plot of all patterns (like year, month, week
+and day) ? Or can we choose the one that is only relevant.
+
+# 1. Documentation
+
+#### Domain knowledge (1.1)
+
+Citi Bike is New York City's bike share system, and the largest in the
+nation. Citi Bike launched in May 2013 and has become an essential part
+of the transportation network. It's fun, efficient and affordable. The
+bikes can be unlocked from one station and returned to any other station
+in the system, making them ideal for one-way trips.Citi Bike is
+available for use 24 hours/day, 7 days/week, 365 days/year.
+
+#### Business requirements (1.2)
+
+Bike sharing system is becoming more popular in the process of greener
+initiative. The highlight of this report is to Understand the pattern of
+bike hires over a period of time (from days to year) Analyse whether the
+pattern of bike hires changes with respect to the rider demographics
+such as age, gender or the type of the trip.
+
+#### Business processes and data flow (1.3)
+
+Create a diagram that shows how the Citi Bike dataset is created (which
+variables are added when) and demonstrates an understanding of the
+business process and flow of the data.
+
+![This diagram was created using draw.io at
+<https://app.diagrams.net>](dataflow_nyc_bikes.png)
+
+#### Data visualisation as a tool for decision-making (1.4)
+
+One of the main challenges in the Bike sharing process is to effectively
+plan the resource usage. This report helps to visualise the available
+bike hire pattern which in turn allow us to calculate the traffic level
+at each station on a daily basis. This can be more useful in the
+prediction analysis on the number of available bikes at any given
+station.
+
+#### Data types (1.5)
+
+bike_id : Factor start_time : POSIXct stop_time : POSIXct start_station:
+Factor start_lat : num start_long : num end_station : Factor end_lat :
+num end_long : num type : Factor birth_year : num gender : Factor
+
+#### Data quality and data bias (1.6)
+
+The dataset description says, " A sample from NYC Citi Bike usage of 10
+bikes throughout 2018" which may result in selection bias. However we
+assumed that the sample seeks to accurately reflect the characteristics
+of the larger group and hence doesn't affect the quality of the data.
+
+# 2. Data cleaning
+
+#### Preparing data for visualisation (1.7)
+
+```{r}
+#Load the library
+library(tsibbledata)
+library(tsibble)
+library(feasts)
+library(tidyverse)
+library(lubridate)
+```
+
+```{r}
+#Load the data
+nyc_bikes_df <- nyc_bikes
+```
+
+```{r}
+#Create new columns for Year, Month, Week, Day
+nyc_bikes_df <- nyc_bikes_df %>% 
+  mutate(year = year(start_time),
+         month = month(start_time, label = TRUE),
+         week = week (start_time),
+         day = day(start_time)
+         )
+```
+
+# 3. Data visualisation
+
+#### Process and design (2.1, 2.7, 2.8, 2.9)
+
+Briefly describe your data visualisation process.
+
+For example: *First, I investigated variables of interest with simple
+single-variable distribution plots. Then I plotted variables of interest
+to the business against each other to see if any patterns were present
+in the data. After selecting key visualisations I ensured these were
+clearly portraying the message I wanted to convey, were aesthetically
+pleasing, as well as accurate and not misleading. All visualisations
+were made in RStudio using the `ggplot` package.*
+
+#### Visualisations (2.2, 2.3, 2.4, 2.5, 2.6)
+
+Let's first analyse the bike hire pattern over time.
+
+Pattern of bike hire within a Year
+
+```{r}
+nyc_bikes_df_year <- nyc_bikes_df %>% 
+  index_by (date =  as_date(start_time)) %>% 
+  summarise(count = n()) %>% 
+    ggplot() + 
+  aes(x = date, y = count) +
+  geom_line(colour = "steelblue") +
+  labs( x = "\nYear",
+        y = "Number of bike hire",
+        title = "Representation of Bike Hire within a Year\n")
+
+nyc_bikes_df_year
+```
+
+[**Pattern of bike hire within a month**]{.ul}
+
+```{r}
+nyc_bikes_df_week <- nyc_bikes_df %>% 
+  filter (month %in% c("Jul","Aug")) %>% 
+  index_by (week) %>% 
+  mutate(count = n()) %>% 
+  ggplot() + 
+  aes(x = week, y = count) +
+  geom_line(colour = "steelblue") +
+  facet_grid(~month, scales = "free")+
+  labs( x = "\nWeeks",
+        y = "Number of bike hire",
+        title = "Representation of Bike Hire within a Year\n")
+
+nyc_bikes_df_week
+
+```
+
+```{r}
+nyc_bikes_df %>% 
+  mutate (age = year(start_time) - birth_year) %>% 
+  group_by (gender, type) %>% 
+  summarise(age = mean(age)) %>% 
+  gg_season(age)+
+  xlab("Months")
+```
+
+```{r}
+library(slider)
+nyc_bikes_df_rolling <- nyc_bikes_df %>% 
+  mutate (age = year(start_time) - birth_year) %>% 
+  mutate(
+    bike_hire_moving_avg = slide_dbl(
+      .x = age, 
+      .f = ~ mean(., na.rm = TRUE),
+      .before = 10,
+      .after = 10
+    )
+  )
+
+nyc_bikes_df_rolling
+
+
+ggplot(nyc_bikes_df_rolling) + 
+  geom_line(aes(x = as_date(start_time), y = age), colour = "grey") + 
+  geom_line(aes(x = as_date(start_time), y = bike_hire_moving_avg), colour = "red")
+
+```
+
+Let's look at these data individually.
+
+Bike Hire Patterns across gender
+
+```{r}
+ nyc_bikes_df %>% 
+  group_by (month,gender) %>% 
+  mutate(count = n()) %>% 
+  index_by (month) %>% 
+    ggplot(aes(x = month, y = count))+
+  geom_point(colour = "steelblue")+
+  geom_line(group = 1, colour = "steelblue") +
+  facet_grid(~gender)+
+  labs( x = "\nMonths",
+        y = "Number of bike hire",
+        title = "Representation of Bike Hire across Gender",
+        subtitle = "(Over Months)")+
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1))
+
+```
+
+```{r}
+nyc_bikes_df %>% 
+  group_by (month,type) %>% 
+  mutate(count = n()) %>% 
+  index_by (month) %>% 
+    ggplot(aes(x = month, y = count))+
+  geom_point(colour = "steelblue")+
+  geom_line(group = 1, colour = "steelblue") +
+  facet_grid(~type)+
+  labs( x = "\nMonths",
+        y = "Age (Years)",
+        title = "Representation of Bike Hire based on the type of trip",
+        subtitle = "(Over Months)")+
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1))
+
+```
+
+Bike Hire Patterns based on the age
+
+```{r}
+ nyc_bikes_df %>% 
+  mutate (age = year(start_time) - birth_year) %>% 
+  index_by(month) %>%
+  summarise(age_mean = mean(age, na.rm = TRUE)) %>% 
+  ggplot(aes(x = month, y = age_mean)) +
+  geom_point(colour = "steelblue")+
+  geom_line(group = 1, colour = "steelblue") +
+  labs( x = "\nMonths",
+        y = "Number of bike hire",
+        title = "Representation of Bike Hire based on the age",
+        subtitle = "(Over Months)")+
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1))
+
+```
+
+Bike Hire Patterns based on the age & gender
+
+```{r}
+ nyc_bikes_df %>% 
+  mutate (age = year(start_time) - birth_year) %>% 
+  index_by(month) %>% 
+  group_by(gender) %>% 
+  summarise(age_mean = mean(age, na.rm = TRUE)) %>% 
+  ggplot(aes(x = month, y = age_mean)) +
+  geom_col(aes(fill = gender), position = "dodge")+
+  labs( x = "\nMonths",
+        y = "Age",
+        title = "Representation of Bike Hire patterns based on demographics",
+        subtitle = "(Data taken from all the months of 2018)")+
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1))
+
+```
+
+For each plot you include in your report, please:
+
+**Describe the visualisation: what kind of visualisation is it and what
+information does it contain?**
+
+For example: *This scatter plot shows the relationship between age
+(years) and spending (GBP), where the red line represents a line of best
+fit, and the shaded area represents the 95% confidence interval.*
+
+**Why is this visualisation important to the business? What does it
+mean/how can it be used?**
+
+For example: *The highlighted relationship between age and spending can
+be used by the business to create better targeted advertisements for
+different age groups as well as make better predictions of customer
+behaviour.*
+
+# PDA Learning Outcomes
+
+## From Communicating with Data (J4Y7 35)
+
+### 1. Prepare data for visualisation
+
+-   1.1. Domain knowledge
+-   1.2. Business requirements
+-   1.3. Business processes and concept of data flow
+-   1.4. Data visualisation as a tool for decision-making
+-   1.5. Data types
+-   1.6. Data quality and data bias
+-   1.7. Preparing data for visualisation
+
+### 2. Create a range of data visualisations to provide business intelligence
+
+-   2.1. Data visualisation workflow
+-   2.2. Data visualisation as a tool for decision-making
+-   2.3. Types of data visualisation
+-   2.4. Selection of visualisation
+-   2.5. Key elements of a data visualisation
+-   2.6. Key Performance Indicators (KPIs)
+-   2.7. Design of data visualisations
+-   2.8. Creating visualisations using software
+-   2.9. Misleading visualisations
+
+## From Working with Data (J4Y6 35)
+
+-   4.6 Time series analysis
+
+
+```{r}
+nyc_bikes_df_time <- nyc_bikes_df %>% 
+  filter (month %in% c("Jun","Jul","Aug")) %>% 
+  mutate (hours =  hour(start_time)) %>% 
+  group_by (week, hours) %>% 
+  mutate(no_of_bike_hire = n()) 
+  
+  nyc_bikes_df %>% 
+    #filter (month %in% c("Jun","Jul","Aug")) %>%
+    filter (month == "Jun") %>% 
+   mutate (hours =   hour(start_time)) %>% 
+    group_by(week, hours) %>% 
+    mutate(no_of_bike_hire = n()) %>% 
+  ggplot() + 
+  aes(x = week, y = hours ) +
+  geom_col(aes(fill = no_of_bike_hire))  +
+  geom_line(colour = "steelblue") +
+  facet_grid(~month, scales = "free")+
+  labs( x = "\nDays",
+        y = "Number of bike hire",
+        title = "Representation of Bike Hire over months" )+
+  scale_x_date(breaks = "1 week", date_labels = "%d")+
+  #scale_y_datetime(breaks = "1 hour", date_labels = "%H")+
+  color_theme()+
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1))
+
+nyc_bikes_df_days
+```
